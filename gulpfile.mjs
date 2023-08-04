@@ -77,13 +77,13 @@ const config = JSON.parse(fs.readFileSync(CONFIG_FILE).toString());
 
 const ENV_TARGETS = [
   "last 2 versions",
-  "Chrome >= 92",
-  "Firefox ESR",
-  "Safari >= 15.4",
-  "Node >= 18",
+  // "Chrome >= 92",
+  // "Firefox ESR",
+  // "Safari >= 15.4",
+  // "Node >= 18",
   "> 1%",
-  "not IE > 0",
-  "not dead",
+  "not ie <= 8",
+  // "not dead",
 ];
 
 // Default Autoprefixer config used for generic, components, minified-pre
@@ -206,7 +206,7 @@ function createWebpackConfig(
   // source-maps are enabled) should be excluded from processing.
   const babelExcludes = ["node_modules[\\\\\\/]core-js"];
   if (enableSourceMaps) {
-    babelExcludes.push("src[\\\\\\/]core[\\\\\\/](glyphlist|unicode)");
+    babelExcludes.push("src[\\\\\\/]core[\\\\\\/](glyphlist)");
   }
   const babelExcludeRegExp = new RegExp(`(${babelExcludes.join("|")})`);
 
@@ -218,7 +218,8 @@ function createWebpackConfig(
           { corejs: "3.31.1", shippedProposals: true, useBuiltIns: "usage" },
         ],
       ];
-  const babelPlugins = ["@babel/plugin-transform-modules-commonjs"];
+  const babelPlugins = ["@babel/plugin-transform-modules-commonjs", "@babel/plugin-proposal-optional-chaining",
+  "@babel/plugin-proposal-nullish-coalescing-operator"];
 
   const plugins = [];
   if (!disableLicenseHeader) {
