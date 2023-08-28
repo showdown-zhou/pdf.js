@@ -129,7 +129,6 @@ class AnnotationEditorLayer {
     } else {
       this.enableClick();
     }
-    this.#uiManager.unselectAll();
 
     if (mode !== AnnotationEditorType.NONE) {
       this.div.classList.toggle(
@@ -167,7 +166,10 @@ class AnnotationEditorLayer {
       }
     }
 
-    const editor = this.#createAndAddNewEditor({ offsetX: 0, offsetY: 0 });
+    const editor = this.#createAndAddNewEditor(
+      { offsetX: 0, offsetY: 0 },
+      /* isCentered = */ false
+    );
     editor.setInBackground();
   }
 
@@ -320,19 +322,15 @@ class AnnotationEditorLayer {
 
     this.detach(editor);
     this.#uiManager.removeEditor(editor);
-    editor.div.style.display = "none";
-    setTimeout(() => {
-      // When the div is removed from DOM the focus can move on the
-      // document.body, so we just slightly postpone the removal in
-      // order to let an element potentially grab the focus before
-      // the body.
-      editor.div.style.display = "";
-      editor.div.remove();
-      editor.isAttachedToDOM = false;
-      if (document.activeElement === document.body) {
+    if (editor.div.contains(document.activeElement)) {
+      setTimeout(() => {
+        // When the div is removed from DOM the focus can move on the
+        // document.body, so we need to move it back to the main container.
         this.#uiManager.focusMainContainer();
-      }
-    }, 0);
+      }, 0);
+    }
+    editor.div.remove();
+    editor.isAttachedToDOM = false;
 
     if (!this.#isCleaningUp) {
       this.addInkEditorIfNeeded(/* isCommitting = */ false);
@@ -385,6 +383,29 @@ class AnnotationEditorLayer {
   }
 
   moveEditorInDOM(editor) {
+    if (!editor.isAttachedToDOM) {
+      return;
+    }
+
+    const { activeElement } = document;
+    if (editor.div.contains(activeElement)) {
+      // When the div is moved in the DOM the focus can move somewhere else,
+      // so we want to be sure that the focus will stay on the editor but we
+      // don't want to call any focus callbacks, hence we disable them and only
+      // re-enable them when the editor has the focus.
+      editor._focusEventsAllowed = false;
+      setTimeout(() => {
+        editor.div.addEventListener(
+          "focusin",
+          () => {
+            editor._focusEventsAllowed = true;
+          },
+          { once: true }
+        );
+        activeElement.focus();
+      }, 0);
+    }
+
     this.#accessibilityManager?.moveElementInDOM(
       this.div,
       editor.div,
@@ -410,9 +431,7 @@ class AnnotationEditorLayer {
    * @param {AnnotationEditor} editor
    */
   addUndoableEditor(editor) {
-    const cmd = () => {
-      this.addOrRebuild(editor);
-    };
+    const cmd = () => editor._uiManager.rebuild(editor);
     const undo = () => {
       editor.remove();
     };
@@ -446,6 +465,31 @@ class AnnotationEditorLayer {
   }
 
   /**
+   * Paste some content into a new editor.
+   * @param {number} mode
+   * @param {Object} params
+   */
+  pasteEditor(mode, params) {
+    this.#uiManager.updateToolbar(mode);
+    this.#uiManager.updateMode(mode);
+
+    const { offsetX, offsetY } = this.#getCenterPoint();
+    const id = this.getNextId();
+    const editor = this.#createNewEditor({
+      parent: this,
+      id,
+      x: offsetX,
+      y: offsetY,
+      uiManager: this.#uiManager,
+      isCentered: true,
+      ...params,
+    });
+    if (editor) {
+      this.add(editor);
+    }
+  }
+
+  /**
    * Create a new editor
    * @param {Object} data
    * @returns {AnnotationEditor}
@@ -465,9 +509,10 @@ class AnnotationEditorLayer {
   /**
    * Create and add a new editor.
    * @param {PointerEvent} event
+   * @param {boolean} isCentered
    * @returns {AnnotationEditor}
    */
-  #createAndAddNewEditor(event) {
+  #createAndAddNewEditor(event, isCentered) {
     const id = this.getNextId();
     const editor = this.#createNewEditor({
       parent: this,
@@ -475,12 +520,39 @@ class AnnotationEditorLayer {
       x: event.offsetX,
       y: event.offsetY,
       uiManager: this.#uiManager,
+      isCentered,
     });
     if (editor) {
       this.add(editor);
     }
 
     return editor;
+  }
+
+  #getCenterPoint() {
+    const { x, y, width, height } = this.div.getBoundingClientRect();
+    const tlX = Math.max(0, x);
+    const tlY = Math.max(0, y);
+    const brX = Math.min(window.innerWidth, x + width);
+    const brY = Math.min(window.innerHeight, y + height);
+    const centerX = (tlX + brX) / 2 - x;
+    const centerY = (tlY + brY) / 2 - y;
+    const [offsetX, offsetY] =
+      this.viewport.rotation % 180 === 0
+        ? [centerX, centerY]
+        : [centerY, centerX];
+
+    return { offsetX, offsetY };
+  }
+
+  /**
+   * Create and add a new editor.
+   */
+  addNewEditor() {
+    this.#createAndAddNewEditor(
+      this.#getCenterPoint(),
+      /* isCentered = */ true
+    );
   }
 
   /**
@@ -544,7 +616,12 @@ class AnnotationEditorLayer {
       return;
     }
 
-    this.#createAndAddNewEditor(event);
+    if (this.#uiManager.getMode() === AnnotationEditorType.STAMP) {
+      this.#uiManager.unselectAll();
+      return;
+    }
+
+    this.#createAndAddNewEditor(event, /* isCentered = */ false);
   }
 
   /**

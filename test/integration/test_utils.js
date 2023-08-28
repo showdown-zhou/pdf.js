@@ -198,7 +198,20 @@ exports.serializeBitmapDimensions = serializeBitmapDimensions;
 async function dragAndDropAnnotation(page, startX, startY, tX, tY) {
   await page.mouse.move(startX, startY);
   await page.mouse.down();
+  await page.waitForTimeout(10);
   await page.mouse.move(startX + tX, startY + tY);
   await page.mouse.up();
 }
 exports.dragAndDropAnnotation = dragAndDropAnnotation;
+
+async function waitForAnnotationEditorLayer(page) {
+  return page.evaluate(() => {
+    return new Promise(resolve => {
+      window.PDFViewerApplication.eventBus.on(
+        "annotationeditorlayerrendered",
+        resolve
+      );
+    });
+  });
+}
+exports.waitForAnnotationEditorLayer = waitForAnnotationEditorLayer;

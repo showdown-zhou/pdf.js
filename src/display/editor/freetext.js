@@ -281,6 +281,9 @@ class FreeTextEditor extends AnnotationEditor {
 
   /** @inheritdoc */
   rebuild() {
+    if (!this.parent) {
+      return;
+    }
     super.rebuild();
     if (this.div === null) {
       return;
@@ -342,6 +345,9 @@ class FreeTextEditor extends AnnotationEditor {
 
   /** @inheritdoc */
   focusin(event) {
+    if (!this._focusEventsAllowed) {
+      return;
+    }
     super.focusin(event);
     if (event.target !== this.editorDiv) {
       this.editorDiv.focus();
@@ -357,6 +363,10 @@ class FreeTextEditor extends AnnotationEditor {
     }
     this.enableEditMode();
     this.editorDiv.focus();
+    if (this._initialOptions?.isCentered) {
+      this.center();
+    }
+    this._initialOptions = null;
   }
 
   /** @inheritdoc */
@@ -444,7 +454,7 @@ class FreeTextEditor extends AnnotationEditor {
         return;
       }
       this.#setContent();
-      this.rebuild();
+      this._uiManager.rebuild(this);
       this.#setEditorDimensions();
     };
     this.addCommands({
@@ -485,6 +495,8 @@ class FreeTextEditor extends AnnotationEditor {
   keydown(event) {
     if (event.target === this.div && event.key === "Enter") {
       this.enterInEditMode();
+      // Avoid to add an unwanted new line.
+      event.preventDefault();
     }
   }
 

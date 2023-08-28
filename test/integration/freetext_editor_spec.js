@@ -104,7 +104,20 @@ describe("FreeText Editor", () => {
           await waitForSelectedEditor(page, getEditorSelector(0));
           await waitForStorageEntries(page, 1);
 
-          const content = await page.$eval(getEditorSelector(0), el =>
+          let content = await page.$eval(getEditorSelector(0), el =>
+            el.innerText.trimEnd()
+          );
+          expect(content).withContext(`In ${browserName}`).toEqual(data);
+
+          // Edit again.
+          await page.keyboard.press("Enter");
+          await page.waitForTimeout(10);
+
+          // Commit.
+          await page.keyboard.press("Escape");
+          await page.waitForTimeout(10);
+
+          content = await page.$eval(getEditorSelector(0), el =>
             el.innerText.trimEnd()
           );
           expect(content).withContext(`In ${browserName}`).toEqual(data);
@@ -377,6 +390,7 @@ describe("FreeText Editor", () => {
         await clearAll(page);
 
         await page.mouse.click(rect.x + 200, rect.y + 100);
+        await page.waitForTimeout(10);
 
         for (let i = 0; i < 5; i++) {
           await page.type(`${getEditorSelector(9)} .internal`, "A");
@@ -906,6 +920,9 @@ describe("FreeText Editor", () => {
             const { x, y, width, height } = el.getBoundingClientRect();
             return { x, y, width, height };
           });
+
+          // Select the annotation we want to move.
+          await page.mouse.click(editorRect.x + 2, editorRect.y + 2);
 
           await dragAndDropAnnotation(
             page,
@@ -2094,6 +2111,235 @@ describe("FreeText Editor", () => {
             .withContext(`In ${browserName}`)
             .not.toEqual(0);
           expect(visitedPages).withContext(`In ${browserName}`).toEqual(sorted);
+        })
+      );
+    });
+  });
+
+  describe("Freetext must stay focused after having been moved", () => {
+    let pages;
+
+    beforeAll(async () => {
+      pages = await loadAndWait("empty.pdf", ".annotationEditorLayer");
+    });
+
+    afterAll(async () => {
+      await closePages(pages);
+    });
+
+    it("must keep the focus", async () => {
+      await Promise.all(
+        pages.map(async ([browserName, page]) => {
+          await page.click("#editorFreeText");
+
+          const rect = await page.$eval(".annotationEditorLayer", el => {
+            const { x, y } = el.getBoundingClientRect();
+            return { x, y };
+          });
+
+          await page.mouse.click(rect.x + 100, rect.y + 100);
+          await page.waitForTimeout(10);
+          await page.type(`${getEditorSelector(0)} .internal`, "A");
+
+          // Commit.
+          await page.keyboard.press("Escape");
+          await page.waitForTimeout(10);
+
+          await page.mouse.click(rect.x + 110, rect.y + 150);
+          await page.waitForTimeout(10);
+          await page.type(`${getEditorSelector(0)} .internal`, "B");
+
+          // Commit.
+          await page.keyboard.press("Escape");
+          await page.waitForTimeout(10);
+
+          await page.mouse.click(rect.x + 115, rect.y + 155);
+          await page.waitForTimeout(10);
+
+          const pos = n =>
+            page.evaluate(sel => {
+              const editor = document.querySelector(sel);
+              return Array.prototype.indexOf.call(
+                editor.parentNode.childNodes,
+                editor
+              );
+            }, getEditorSelector(n));
+
+          expect(await pos(0))
+            .withContext(`In ${browserName}`)
+            .toEqual(0);
+          expect(await pos(1))
+            .withContext(`In ${browserName}`)
+            .toEqual(1);
+
+          for (let i = 0; i < 6; i++) {
+            await page.keyboard.down("Control");
+            await page.keyboard.press("ArrowUp");
+            await page.keyboard.up("Control");
+            await page.waitForTimeout(1);
+          }
+
+          await page.waitForTimeout(100);
+          const focused = await page.evaluate(sel => {
+            const editor = document.querySelector(sel);
+            return editor === document.activeElement;
+          }, getEditorSelector(1));
+          expect(focused).withContext(`In ${browserName}`).toEqual(true);
+
+          expect(await pos(0))
+            .withContext(`In ${browserName}`)
+            .toEqual(1);
+          expect(await pos(1))
+            .withContext(`In ${browserName}`)
+            .toEqual(0);
+        })
+      );
+    });
+  });
+
+  describe("Move several FreeTexts", () => {
+    let pages;
+
+    beforeAll(async () => {
+      pages = await loadAndWait("empty.pdf", ".annotationEditorLayer");
+    });
+
+    afterAll(async () => {
+      await closePages(pages);
+    });
+
+    it("must move several annotations", async () => {
+      await Promise.all(
+        pages.map(async ([browserName, page]) => {
+          await page.click("#editorFreeText");
+
+          const rect = await page.$eval(".annotationEditorLayer", el => {
+            const { x, y } = el.getBoundingClientRect();
+            return { x, y };
+          });
+
+          const allPositions = [];
+
+          for (let i = 0; i < 10; i++) {
+            await page.mouse.click(rect.x + 10 + 30 * i, rect.y + 100 + 5 * i);
+            await page.waitForTimeout(10);
+            await page.type(
+              `${getEditorSelector(i)} .internal`,
+              String.fromCharCode(65 + i)
+            );
+
+            // Commit.
+            await page.keyboard.press("Escape");
+            await page.waitForTimeout(10);
+
+            allPositions.push(
+              await page.$eval(getEditorSelector(i), el => {
+                const { x, y } = el.getBoundingClientRect();
+                return { x, y };
+              })
+            );
+          }
+
+          await page.keyboard.down("Control");
+          await page.keyboard.press("a");
+          await page.keyboard.up("Control");
+
+          await page.waitForTimeout(10);
+          await dragAndDropAnnotation(page, rect.x + 161, rect.y + 126, 39, 74);
+          await page.waitForTimeout(10);
+
+          for (let i = 0; i < 10; i++) {
+            const pos = await page.$eval(getEditorSelector(i), el => {
+              const { x, y } = el.getBoundingClientRect();
+              return { x, y };
+            });
+            const oldPos = allPositions[i];
+            expect(Math.round(pos.x))
+              .withContext(`In ${browserName}`)
+              .toEqual(Math.round(oldPos.x + 39));
+            expect(Math.round(pos.y))
+              .withContext(`In ${browserName}`)
+              .toEqual(Math.round(oldPos.y + 74));
+          }
+        })
+      );
+    });
+  });
+
+  describe("Don't unselect all when scrolling", () => {
+    let pages;
+
+    beforeAll(async () => {
+      pages = await loadAndWait(
+        "tracemonkey.pdf",
+        ".annotationEditorLayer",
+        100,
+        async page => {
+          await page.waitForFunction(async () => {
+            await window.PDFViewerApplication.initializedPromise;
+            return true;
+          });
+          await page.evaluate(() => {
+            window.PDFViewerApplication.eventBus.on(
+              "annotationeditorstateschanged",
+              ({ details }) => {
+                window.editingEvents?.push(details);
+              }
+            );
+          });
+        }
+      );
+    });
+
+    afterAll(async () => {
+      await closePages(pages);
+    });
+
+    it("must check that selected editor stay selected", async () => {
+      await Promise.all(
+        pages.map(async ([browserName, page]) => {
+          await page.click("#editorFreeText");
+
+          const rect = await page.$eval(".annotationEditorLayer", el => {
+            const { x, y } = el.getBoundingClientRect();
+            return { x, y };
+          });
+
+          const data = "Hello PDF.js World !!";
+          await page.mouse.click(rect.x + 100, rect.y + 100);
+          await page.waitForTimeout(10);
+          await page.type(`${getEditorSelector(0)} .internal`, data);
+          // Commit.
+          await page.keyboard.press("Escape");
+          await page.waitForTimeout(10);
+
+          await page.evaluate(() => {
+            window.editingEvents = [];
+          });
+          await page.waitForTimeout(10);
+
+          for (let pageNumber = 1; pageNumber <= 4; pageNumber++) {
+            const pageSelector = `.page[data-page-number = "${pageNumber}"]`;
+            await page.evaluate(selector => {
+              const element = window.document.querySelector(selector);
+              element.scrollIntoView();
+            }, pageSelector);
+
+            const annotationLayerSelector = `${pageSelector} > .annotationEditorLayer`;
+            await page.waitForSelector(annotationLayerSelector, {
+              visible: true,
+              timeout: 0,
+            });
+          }
+
+          const editingEvents = await page.evaluate(() => {
+            const e = window.editingEvents;
+            delete window.editingEvents;
+            return e;
+          });
+          expect(editingEvents.length)
+            .withContext(`In ${browserName}`)
+            .toEqual(0);
         })
       );
     });
